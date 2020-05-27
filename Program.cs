@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -6,15 +7,36 @@ using CsvHelper;
 
 namespace _02_03_FirstBankOfSuncoast
 {
+
+    class Transaction
+    {
+        public string Type { get; set; }
+        public string Account { get; set; }
+        public decimal Amount { get; set; }
+    }
+
+
     partial class Program
     {
-        static void ShowBalance(User user)
+        private static decimal TransferSum(List<Transaction> transactions, string accountTransferOut)
         {
-            Console.WriteLine($"Accounts: \n");
-            foreach (var account in user.Accounts)
-            {
-                Console.WriteLine($"{account.Name}: ${account.Balance}");
-            }
+            var transferTransactions = transactions.Where(transaction => transaction.Account == accountTransferOut && transaction.Type == "Transfer");
+            var transferTransactionSum = transferTransactions.Sum(transaction => transaction.Amount);
+
+            return transferTransactionSum;
+        }
+        private static decimal CalculateAccountBalance(List<Transaction> transactions, string account, string otherAccount)
+        {
+            var accountDepositTransactions = transactions.Where(transaction => transaction.Account == account && transaction.Type == "Deposit");
+            var accountDepositTransactionSum = accountDepositTransactions.Sum(transaction => transaction.Amount);
+
+            var accountWithdrawTransactions = transactions.Where(transaction => transaction.Account == account && transaction.Type == "Withdraw");
+            var accountWithdrawTransactionSum = accountWithdrawTransactions.Sum(transaction => transaction.Amount);
+
+            var balance = accountDepositTransactionSum - accountWithdrawTransactionSum;
+            balance = balance - TransferSum(transactions, otherAccount);
+
+            return balance - TransferSum(transactions, account);
         }
 
         static void Greeting(string prompt)
@@ -32,23 +54,31 @@ namespace _02_03_FirstBankOfSuncoast
 
         static decimal AskForDecimal(string prompt)
         {
-            Console.WriteLine(prompt);
+            decimal result = 0.00m;
+            bool goodInput = false;
 
-            decimal result;
-            bool goodResponse = false;
-
-            var input = Console.ReadLine();
-            goodResponse = decimal.TryParse(input, out result);
-
-            while (!goodResponse)
+            while (!goodInput)
             {
-                Console.WriteLine("Invalid Input! Enter an amount in two decimal places! eg. 10.00");
-                input = Console.ReadLine();
+                Console.WriteLine(prompt);
 
-                goodResponse = decimal.TryParse(input, out result);
+                var input = Console.ReadLine();
+                goodInput = decimal.TryParse(input, out result);
+
+                // Invalid input: not a number
+                if (!goodInput)
+                {
+                    PressAnyKeyPrompt("Invalid input! Not a number. Press any key to continue...");
+                }
+
+                // Invalid input: not a positive number
+                if (goodInput && result < 0)
+                {
+                    PressAnyKeyPrompt("Invalid input! Not a positive number. Press any key to continue...");
+                    goodInput = false;
+                }
             }
 
-            return Math.Abs(result);
+            return result;
         }
 
         static char PressAKeyPrompt(string prompt)
@@ -68,9 +98,9 @@ namespace _02_03_FirstBankOfSuncoast
         {
             TextReader reader;
 
-            if (File.Exists("Users.csv"))
+            if (File.Exists("Transactions.csv"))
             {
-                reader = new StreamReader("Users.csv");
+                reader = new StreamReader("Transactions.csv");
             }
             else
             {
@@ -78,27 +108,97 @@ namespace _02_03_FirstBankOfSuncoast
             }
 
             var csvReader = new CsvReader(reader, CultureInfo.InvariantCulture);
-            var users = csvReader.GetRecords<User>().ToList();
+            var transactions = csvReader.GetRecords<Transaction>().ToList();
 
-            var userInUse = new User();
             reader.Close();
-            userInUse.LoadAccount();
 
-            // Log in phase ---------------------------------------------------------------------------
+            var users = new List<User>();
+            var userInUse = new User();
+
+            var user1 = new User()
+            {
+                UserID = "Kento726",
+                UserPassword = "1234",
+                FirstName = "Kento",
+                LastName = "Kawakami"
+            };
+
+            var user2 = new User()
+            {
+                UserID = "Kodak51",
+                UserPassword = "12345",
+                FirstName = "Kodak",
+                LastName = "Kawakami"
+            };
+
+            var user3 = new User()
+            {
+                UserID = "Breadkenty",
+                UserPassword = "123456",
+                FirstName = "Bread",
+                LastName = "Kenty"
+            };
+
+            var user4 = new User()
+            {
+                UserID = "CodeMaster1337",
+                UserPassword = "1337",
+                FirstName = "Gavin",
+                LastName = "Stark"
+            };
+            users.Add(user1);
+            users.Add(user2);
+            users.Add(user3);
+            users.Add(user4);
+
+            // var transactions = new List<Transaction>();
+
+            var deposit1 = new Transaction()
+            {
+                Type = "Deposit",
+                Amount = 10000.00m,
+                Account = "Checking",
+            };
+            var deposit2 = new Transaction()
+            {
+                Type = "Deposit",
+                Amount = 4869.00m,
+                Account = "Saving",
+            };
+            var withdraw1 = new Transaction()
+            {
+                Type = "Withdraw",
+                Amount = 1234m,
+                Account = "Checking",
+            };
+            var withdraw2 = new Transaction()
+            {
+                Type = "Withdraw",
+                Amount = 1234m,
+                Account = "Saving",
+            };
+
+            transactions.Add(deposit1);
+            transactions.Add(deposit2);
+            transactions.Add(withdraw1);
+            transactions.Add(withdraw2);
+
+            // // Log in phase ---------------------------------------------------------------------------
 
             // Ask for username and password, create an account if you don't have one
             bool accessGranted = false;
+            User userInOperation = null;
 
             while (!accessGranted)
             {
                 var input = PressAKeyPrompt("L to login to your account | C to create a new account ");
                 bool goodInput = "lc".Contains(input);
-                User selectedUser;
 
                 // User Login
                 if (input == 'l')
                 {
                     bool enteringUserID = true;
+
                     while (enteringUserID)
                     {
                         string userIDEntered = AskForString($"Enter your user name: ");
@@ -107,24 +207,26 @@ namespace _02_03_FirstBankOfSuncoast
                         // If the user exists enter the password
                         if (userExists)
                         {
-                            selectedUser = users.First(user => user.UserID == userIDEntered);
+                            userInOperation = users.First(user => user.UserID == userIDEntered);
+
                             bool correctPassword = false;
+
                             while (!correctPassword)
                             {
                                 var userPasswordEntered = AskForString($"Enter your password: ");
 
                                 // Correct password
-                                if (selectedUser.UserPassword == userPasswordEntered)
+                                if (userInOperation.UserPassword == userPasswordEntered)
                                 {
-                                    PressAnyKeyPrompt($"Welcome {selectedUser.FirstName}! Press any key see your account status...");
-                                    userInUse = selectedUser;
+                                    PressAnyKeyPrompt($"Welcome {userInOperation.FirstName}! Press any key see your account status...");
+
                                     correctPassword = true;
                                     enteringUserID = false;
                                     accessGranted = true;
                                 }
 
                                 // Invalid password
-                                if (selectedUser.UserPassword != userPasswordEntered)
+                                if (userInOperation.UserPassword != userPasswordEntered)
                                 {
                                     PressAnyKeyPrompt("Invalid password. Press any key to try again...");
                                 }
@@ -152,7 +254,7 @@ namespace _02_03_FirstBankOfSuncoast
                         LastName = AskForString("Last Name: ")
                     };
 
-                    userInUse = newUser;
+                    userInOperation = newUser;
 
                     PressAnyKeyPrompt($"Welcome {newUser.FirstName}! Press any key see your account status...");
                     accessGranted = true;
@@ -166,18 +268,19 @@ namespace _02_03_FirstBankOfSuncoast
             }
 
             // Bank transaction page ---------------------------------------------------------------------------
+
             bool mainMenuInUse = true;
 
             while (mainMenuInUse)
             {
                 Console.Clear();
-                Greeting($"{userInUse.FirstName}, welcome to the First Bank of Suncoast!");
+                Greeting($"{userInOperation.FirstName}, welcome to the First Bank of Suncoast!");
 
-                // Show Balance
-                ShowBalance(userInUse);
+                var checkingAccount = transactions.Where(transaction => transaction.Account == "Checking");
+                var savingAccount = transactions.Where(transaction => transaction.Account == "Saving");
 
-                var input = PressAKeyPrompt("N to create a new account | B to browse your accounts | X to Exit");
-                var goodInput = "nbx".Contains(input);
+                var mainMenuInput = PressAKeyPrompt("D - Deposit | W - Withdraw | T - Transfer | S - Show balance | X - Exit");
+                var goodInput = "dwtsx".Contains(mainMenuInput);
 
                 // Invalid input
                 if (!goodInput)
@@ -185,169 +288,193 @@ namespace _02_03_FirstBankOfSuncoast
                     PressAnyKeyPrompt("Invalid input!");
                 }
 
-                // N to create a new account
-                if (input == 'n' || userInUse.Accounts.Count() == 0)
+                // Deposit money
+                if (mainMenuInput == 'd')
                 {
-                    PressAnyKeyPrompt("Let's set you up with a new account! Press any key to continue...");
+                    bool depositInUse = true;
 
-                    var newAccount = new Account()
+                    while (depositInUse)
                     {
-                        Name = AskForString("What type of account is this?"),
-                        Balance = AskForDecimal("How much are you depositing to this account?")
-                    };
+                        var depositMenuInput = PressAKeyPrompt("Deposit to:\nC - Checking | S - Saving | X - Finish Deposit");
+                        var goodDepositInput = "csx".Contains(depositMenuInput);
 
-                    userInUse.Accounts.Add(newAccount);
-                    userInUse.SaveAccount();
-
-                    PressAnyKeyPrompt($"Great we've created your {newAccount.Name} account! \nWe've deposited your check. Your current balance is ${newAccount.Balance}. \nPress any key to continue...");
-                }
-
-                // B to browse accounts
-                if (input == 'b' && userInUse.Accounts.Count() > 0)
-                {
-                    Console.WriteLine($"\nHere are all of your accounts");
-                    foreach (var account in userInUse.Accounts)
-                    {
-                        Console.WriteLine(account.Name);
-                    }
-
-                    bool accountMenuInUse = true;
-                    while (accountMenuInUse)
-                    {
-                        var askedAccountString = AskForString("Which account would you to browse?");
-                        var askedAccount = userInUse.Accounts.FirstOrDefault(account => account.Name == askedAccountString);
-                        bool validAccount = userInUse.Accounts.Any(account => account.Name == askedAccountString);
-
-                        // Valid account input
-                        if (validAccount)
+                        if (depositMenuInput == 'c')
                         {
-                            var accountBrowsingMenuInput = PressAKeyPrompt("D - Deposit | W - Withdraw | T - Transfer | S - Show balance | M - Main Menu ");
-                            goodInput = "dwtsm".Contains(accountBrowsingMenuInput);
+                            var depositAmount = AskForDecimal("How much do you want to deposit into your checking account?");
 
-                            // Invalid input
-                            if (!goodInput)
+                            var newDepositTransaction = new Transaction()
                             {
-                                PressAnyKeyPrompt("Invalid input!");
-                            }
+                                Type = "Deposit",
+                                Account = "Checking",
+                                Amount = depositAmount
+                            };
 
-                            // Deposit money
-                            if (accountBrowsingMenuInput == 'd')
-                            {
-                                var depositAmount = AskForDecimal("How much would you like to deposit?");
-                                askedAccount.Balance += depositAmount;
-                                userInUse.SaveAccount();
+                            transactions.Add(newDepositTransaction);
 
-                                Console.WriteLine($"${depositAmount} has been deposited to the account: {askedAccount.Name}.\nYour current balance is ${askedAccount.Balance}");
-                                PressAnyKeyPrompt($"Press any key to continue...");
-                            }
-
-                            // Withdraw money
-                            if (accountBrowsingMenuInput == 'w' && askedAccount.Balance > 0)
-                            {
-                                var withdrawAmount = AskForDecimal("How much would you like to withdraw?");
-
-                                if (withdrawAmount > askedAccount.Balance)
-                                {
-                                    PressAnyKeyPrompt("Unavailable to withdraw, insufficient funds. Press any key to continue...");
-                                }
-
-                                if (withdrawAmount <= askedAccount.Balance)
-                                {
-                                    askedAccount.Balance -= withdrawAmount;
-                                    userInUse.SaveAccount();
-
-                                    Console.WriteLine($"${withdrawAmount} has been deposited to the account: {askedAccount.Name}.\nYour current balance is ${askedAccount.Balance}");
-                                    PressAnyKeyPrompt($"Press any key to continue...");
-                                }
-                            }
-
-                            if (accountBrowsingMenuInput == 'w' && askedAccount.Balance == 0)
-                            {
-                                PressAnyKeyPrompt("You do not have any funds to withdraw. Deposit some money first! Press any key to continue...");
-                            }
-
-                            // Transfer money to another account
-                            if (accountBrowsingMenuInput == 't' && userInUse.Accounts.Count() > 1)
-                            {
-                                Console.WriteLine($"-----------------------");
-                                Console.WriteLine($"Your accounts: \n");
-                                foreach (var account in userInUse.Accounts)
-                                {
-                                    Console.WriteLine(account.Name);
-                                }
-                                Console.WriteLine($"-----------------------");
-
-                                var transferToString = AskForString("Which account did you want to transfer to?");
-                                var transferTo = userInUse.Accounts.FirstOrDefault(account => account.Name == transferToString);
-
-                                var transferAmount = AskForDecimal("How much would you like to transfer?");
-
-                                if (transferAmount > askedAccount.Balance)
-                                {
-                                    PressAnyKeyPrompt("Unavailable to transfer, insufficient funds. Press any key to continue...");
-                                }
-
-                                if (transferAmount < askedAccount.Balance)
-                                {
-                                    askedAccount.Balance -= transferAmount;
-                                    transferTo.Balance += transferAmount;
-                                    userInUse.SaveAccount();
-
-                                    Console.WriteLine($"${transferAmount} has been deposited to the account: {askedAccount.Name}.\nYour current balance is ${askedAccount.Balance}");
-                                    PressAnyKeyPrompt($"Press any key to continue...");
-                                }
-                            }
-
-                            // No account to transfer to
-                            if (accountBrowsingMenuInput == 't' && userInUse.Accounts.Count() == 1)
-                            {
-                                PressAnyKeyPrompt("You don't have another account to transfer to. Please create another account. Press any key to continue...");
-                            }
-
-                            // Show balance
-                            if (accountBrowsingMenuInput == 's')
-                            {
-                                Console.WriteLine($"{askedAccount.Name}: ${askedAccount.Balance}");
-                                PressAnyKeyPrompt($"\nPress any key to continue...");
-                            }
-
-                            // Main Menu
-                            if (accountBrowsingMenuInput == 'm')
-                            {
-                                accountMenuInUse = false;
-                            }
+                            PressAnyKeyPrompt($"You deposited ${depositAmount} to your Checking account.\nPress any key to continue...");
                         }
 
-                        if (!validAccount)
+                        if (depositMenuInput == 's')
                         {
-                            PressAnyKeyPrompt("Invalid account name! Please enter the account name. Press any key to continue...");
+                            var depositAmount = AskForDecimal("How much do you want to deposit into your saving account?");
+
+                            var newDepositTransaction = new Transaction()
+                            {
+                                Type = "Deposit",
+                                Account = "Saving",
+                                Amount = depositAmount
+                            };
+
+                            transactions.Add(newDepositTransaction);
+
+                            PressAnyKeyPrompt($"You deposited ${depositAmount} to your Saving account.\nPress any key to continue...");
+                        }
+
+                        if (depositMenuInput == 'x')
+                        {
+                            PressAnyKeyPrompt("Entering Main Menu.\nPress any key to continue...");
+                            depositInUse = false;
+                        }
+
+                        if (!goodDepositInput)
+                        {
+                            PressAnyKeyPrompt("Invalid input!");
                         }
                     }
                 }
 
-                if (input == 'x')
+                // Withdraw money
+                if (mainMenuInput == 'w')
+                {
+                    bool withdrawInUse = true;
+
+                    while (withdrawInUse)
+                    {
+                        var withdrawMenuInput = PressAKeyPrompt("Withdraw from:\nC - Checking | S - Saving | X - Finish Withdraw");
+                        var goodWithdrawInput = "csx".Contains(withdrawMenuInput);
+
+                        if (withdrawMenuInput == 'c')
+                        {
+                            var withdrawAmount = AskForDecimal("How much do you want to withdraw from your checking account?");
+
+                            var newWithdrawTransaction = new Transaction()
+                            {
+                                Type = "Withdraw",
+                                Account = "Checking",
+                                Amount = withdrawAmount
+                            };
+
+                            transactions.Add(newWithdrawTransaction);
+
+                            PressAnyKeyPrompt($"You've withdrawn ${withdrawAmount} from your Checking account.\nPress any key to continue...");
+                        }
+
+                        if (withdrawMenuInput == 's')
+                        {
+                            var withdrawAmount = AskForDecimal("How much do you want to withdraw into your saving account?");
+
+                            var newWithdrawTransaction = new Transaction()
+                            {
+                                Type = "Withdraw",
+                                Account = "Saving",
+                                Amount = withdrawAmount
+                            };
+
+                            transactions.Add(newWithdrawTransaction);
+
+                            PressAnyKeyPrompt($"You've withdrawn ${withdrawAmount} from your Saving account.\nPress any key to continue...");
+                        }
+
+                        if (withdrawMenuInput == 'x')
+                        {
+                            PressAnyKeyPrompt("Entering Main Menu.\nPress any key to continue...");
+                            withdrawInUse = false;
+                        }
+
+                        if (!goodWithdrawInput)
+                        {
+                            PressAnyKeyPrompt("Invalid input!");
+                        }
+                    }
+                }
+
+                // Transfer money to another account
+                if (mainMenuInput == 't')
+                {
+                    bool transferInUse = true;
+
+                    while (transferInUse)
+                    {
+                        var transferMenuInput = PressAKeyPrompt("Transfer from:\nC - Checking | S - Saving | X - Finish transfer");
+                        var goodTransferInput = "csx".Contains(transferMenuInput);
+
+                        if (transferMenuInput == 'c')
+                        {
+                            var transferAmount = AskForDecimal("How much do you want to transfer from your checking account to your savings account?");
+
+                            var newTransferTransaction = new Transaction()
+                            {
+                                Type = "Transfer",
+                                Account = "Checking",
+                                Amount = transferAmount
+                            };
+
+                            transactions.Add(newTransferTransaction);
+                            PressAnyKeyPrompt($"You've transferred ${transferAmount} from your Checking account.\nPress any key to continue...");
+                        }
+
+                        if (transferMenuInput == 's')
+                        {
+                            var transferAmount = AskForDecimal("How much do you want to transfer from your savings account to your checking account?");
+
+                            var newTransferTransaction = new Transaction()
+                            {
+                                Type = "Transfer",
+                                Account = "Saving",
+                                Amount = transferAmount
+                            };
+
+                            transactions.Add(newTransferTransaction);
+                            PressAnyKeyPrompt($"You've transferred ${transferAmount} from your Checking account.\nPress any key to continue...");
+                        }
+
+                        if (transferMenuInput == 'x')
+                        {
+                            PressAnyKeyPrompt("Entering main menu.\nPress any key to continue...");
+
+                            transferInUse = false;
+                        }
+
+                        if (!goodTransferInput)
+                        {
+                            PressAnyKeyPrompt("Invalid input!");
+                        }
+                    }
+                }
+
+                // Show balance
+                if (mainMenuInput == 's')
+                {
+                    var checkingBalance = CalculateAccountBalance(transactions, "Checking", "Saving");
+                    var savingBalance = CalculateAccountBalance(transactions, "Saving", "Checking");
+
+                    Console.WriteLine($"Checking: ${checkingBalance}");
+
+                    Console.WriteLine($"Saving: ${savingBalance}");
+
+                    PressAnyKeyPrompt($"\nHere are your account balances.\nPress any key to continue...");
+                }
+
+                if (mainMenuInput == 'x')
                 {
                     PressAnyKeyPrompt("Thank you for banking with the First Bank of Suncoast! Press any key to exit...");
                     mainMenuInUse = false;
                 }
             }
 
-            foreach (var user in users)
-            {
-                Console.WriteLine($"{userInUse.FirstName}: ");
-
-                foreach (var account in userInUse.Accounts)
-                {
-                    Console.WriteLine($"{account.Name}: ${account.Balance}");
-
-                    PressAnyKeyPrompt("Press any key to continue");
-                }
-            }
-
-            users.Add(userInUse);
-            var fileWriter = new StreamWriter("Users.csv");
+            var fileWriter = new StreamWriter("Transactions.csv");
             var csvWriter = new CsvWriter(fileWriter, CultureInfo.InvariantCulture);
-            csvWriter.WriteRecords(users);
+            csvWriter.WriteRecords(transactions);
             fileWriter.Close();
         }
     }
