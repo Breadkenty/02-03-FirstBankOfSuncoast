@@ -19,3 +19,14 @@ Withdraw,Saving,1234
 Transfer,Checking,5029
 Transfer,Saving,94
 Transfer,Saving,0
+Deposit,Checking,10000.00
+Deposit,Saving,4869.00
+Withdraw,Checking,1234
+Withdraw,Saving,1234
+Deposit,Checking,1001
+Withdraw,Saving,100
+Transfer,Checking,1001
+Deposit,Checking,10000.00
+Deposit,Saving,4869.00
+Withdraw,Checking,1234
+Withdraw,Saving,1234
